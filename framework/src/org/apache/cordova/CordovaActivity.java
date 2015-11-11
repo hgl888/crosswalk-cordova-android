@@ -28,6 +28,7 @@ import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.LOG;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.xwalk.core.XWalkActivity;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -54,6 +55,7 @@ import android.view.MenuItem;
 import android.view.OrientationEventListener;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.ValueCallback;
@@ -77,6 +79,11 @@ import android.widget.LinearLayout;
  *       &#64;Override
  *       public void onCreate(Bundle savedInstanceState) {
  *         super.onCreate(savedInstanceState);
+ *       }
+ *
+ *       &#64;Override
+ *       public void onXWalkReady() {
+ *         super.init();
  *         // Load your application
  *         loadUrl(launchUrl);
  *       }
@@ -90,7 +97,7 @@ import android.widget.LinearLayout;
  * deprecated in favor of the config.xml file.
  *
  */
-public class CordovaActivity extends Activity implements CordovaInterface {
+public abstract class CordovaActivity extends XWalkActivity implements CordovaInterface {
     public static String TAG = "CordovaActivity";
 
     // The webview for our app
@@ -205,14 +212,43 @@ public class CordovaActivity extends Activity implements CordovaInterface {
     public void onCreate(Bundle savedInstanceState) {
         LOG.i(TAG, "Apache Cordova native platform version " + CordovaWebView.CORDOVA_VERSION + " is starting");
         LOG.d(TAG, "CordovaActivity.onCreate()");
+
+        // need to activate preferences before super.onCreate to avoid "requestFeature() must be called before adding content" exception
+        loadConfig();
+        if(!preferences.getBoolean("ShowTitle", false))
+        {
+            getWindow().requestFeature(Window.FEATURE_NO_TITLE);
+        }
+        
+        if(preferences.getBoolean("SetFullscreen", false))
+        {
+            Log.d(TAG, "The SetFullscreen configuration is deprecated in favor of Fullscreen, and will be removed in a future version.");
+            getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        } else if (preferences.getBoolean("Fullscreen", false)) {
+            toggleFullscreen(getWindow());
+
+            if (isImmersiveMode()) {
+                getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(new View.OnSystemUiVisibilityChangeListener() {
+                    @Override
+                    public void onSystemUiVisibilityChange(int visibility) {
+                        if ((visibility & View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) {
+                            setSystemUiVisibilityMode(getWindow());
+                        }
+                    }
+                });
+            }
+        } else {
+            getWindow().setFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN,
+                    WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+        }
+
         super.onCreate(savedInstanceState);
 
         if(savedInstanceState != null)
         {
             initCallbackClass = savedInstanceState.getString("callbackClass");
         }
-        
-        loadConfig();
     }
 
     @SuppressWarnings("deprecation")
@@ -232,7 +268,9 @@ public class CordovaActivity extends Activity implements CordovaInterface {
     @SuppressWarnings("deprecation")
     protected void createViews() {
         // This builds the view.  We could probably get away with NOT having a LinearLayout, but I like having a bucket!
-        // This builds the view.  We could probably get away with NOT having a LinearLayout, but I like having a bucket!
+
+        LOG.d(TAG, "CordovaActivity.createViews()");
+
         Display display = getWindowManager().getDefaultDisplay();
         int width = display.getWidth();
         int height = display.getHeight();
@@ -250,6 +288,14 @@ public class CordovaActivity extends Activity implements CordovaInterface {
 
         // Add web view but make it invisible while loading URL
         appView.setVisibility(View.INVISIBLE);
+        
+        // need to remove appView from any existing parent before invoking root.addView(appView)
+        ViewParent parent = appView.getParent();
+        if ((parent != null) && (parent != root)) {
+            LOG.d(TAG, "removing appView from existing parent");
+            ViewGroup parentGroup = (ViewGroup) parent;
+            parentGroup.removeView(appView);
+        }
         root.addView((View) appView);
         setContentView(root);
 
@@ -269,8 +315,21 @@ public class CordovaActivity extends Activity implements CordovaInterface {
      */
     @SuppressLint("NewApi")
     private void toggleFullscreen(Window window) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            final int uiOptions =
+        if (isImmersiveMode()) {
+            setSystemUiVisibilityMode(window);
+        } else {
+            window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        }
+    }
+
+    private boolean isImmersiveMode() {
+        return !preferences.getBoolean("disableImmersive", false) &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT;
+    }
+
+    private void setSystemUiVisibilityMode(Window window) {
+        final int uiOptions =
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                     | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                     | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
@@ -278,11 +337,7 @@ public class CordovaActivity extends Activity implements CordovaInterface {
                     | View.SYSTEM_UI_FLAG_FULLSCREEN
                     | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
 
-            window.getDecorView().setSystemUiVisibility(uiOptions);
-        } else {
-            window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        }
+        window.getDecorView().setSystemUiVisibility(uiOptions);
     }
 
     /**
@@ -327,23 +382,6 @@ public class CordovaActivity extends Activity implements CordovaInterface {
     @Deprecated // Call init() instead and override makeWebView() to customize.
     public void init(CordovaWebView webView, CordovaWebViewClient webViewClient, CordovaChromeClient webChromeClient) {
         LOG.d(TAG, "CordovaActivity.init()");
-
-        if(!preferences.getBoolean("ShowTitle", false))
-        {
-            getWindow().requestFeature(Window.FEATURE_NO_TITLE);
-        }
-
-        if(preferences.getBoolean("SetFullscreen", false))
-        {
-            Log.d(TAG, "The SetFullscreen configuration is deprecated in favor of Fullscreen, and will be removed in a future version.");
-            getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        } else if (preferences.getBoolean("Fullscreen", false)) {
-            toggleFullscreen(getWindow());
-        } else {
-            getWindow().setFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN,
-                    WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
-        }
 
         appView = webView != null ? webView : makeWebView();
         if (appView.pluginManager == null) {
@@ -1008,6 +1046,17 @@ public class CordovaActivity extends Activity implements CordovaInterface {
                 if(getBooleanProperty("FullScreen", false))
                 {
                     toggleFullscreen(splashDialog.getWindow());
+
+                    if (isImmersiveMode()) {
+                        splashDialog.getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(new View.OnSystemUiVisibilityChangeListener() {
+                            @Override
+                            public void onSystemUiVisibilityChange(int visibility) {
+                                if ((visibility & View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) {
+                                    setSystemUiVisibilityMode(splashDialog.getWindow());
+                                }
+                            }
+                        });
+                    }
                 }
 
                 splashDialog.setContentView(splashLayout);
@@ -1066,8 +1115,13 @@ public class CordovaActivity extends Activity implements CordovaInterface {
     public boolean onKeyDown(int keyCode, KeyEvent event)
     {
         //Determine if the focus is on the current view or not
-        if (appView != null && appView.getFocusedChild() != null && (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_MENU)) {
-                    return appView.onKeyDown(keyCode, event);
+        if (appView != null && appView.getFocusedChild() != null &&
+                (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_MENU)) {
+            if (!appView.onKeyDown(keyCode, event)) {
+                getActivity().finish();
+                return false;
+            }
+            return true;
         }
         else
             return super.onKeyDown(keyCode, event);

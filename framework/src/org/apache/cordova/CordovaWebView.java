@@ -185,6 +185,7 @@ public class CordovaWebView extends XWalkView {
         this.setVerticalScrollBarEnabled(false);
         // TODO: The Activity is the one that should call requestFocus().
         if (shouldRequestFocusOnInit()) {
+            this.setFocusableInTouchMode(true);
             this.requestFocusFromTouch();
         }
 
@@ -515,6 +516,14 @@ public class CordovaWebView extends XWalkView {
         }
     }
 
+    /**
+     * Gets whether this WebView has a back history item.
+     *
+     * @return true if can go back, false if we are already at top
+     */
+    public boolean canGoBack() {
+        return this.getNavigationHistory().canGoBack();
+    }
 
     /**
      * Go to previous page in history.  (We manage our own history)
@@ -666,13 +675,6 @@ public class CordovaWebView extends XWalkView {
                         return true;
                     }
                     // If not, then invoke default behavior
-                    else {
-                        //this.activityState = ACTIVITY_EXITING;
-                        //return false;
-                        // If they hit back button when app is initializing, app should exit instead of hang until initialization (CB2-458)
-                        this.cordova.getActivity().finish();
-                        return false;
-                    }
                 }
             }
         }
@@ -688,6 +690,12 @@ public class CordovaWebView extends XWalkView {
         else if (keyCode == KeyEvent.KEYCODE_SEARCH) {
             this.loadUrl("javascript:cordova.fireDocumentEvent('searchbutton');");
             return true;
+        }
+        // Request focus on XWalkView
+        else if((keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP) &&
+                !isFocused()) {
+            requestFocus();
+            return super.dispatchKeyEvent(event);
         }
 
         //Does webkit change this behavior?

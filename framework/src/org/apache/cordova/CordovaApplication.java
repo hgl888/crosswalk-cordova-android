@@ -16,22 +16,9 @@
        specific language governing permissions and limitations
        under the License.
 */
+package org.apache.cordova;
 
-exports.getArgs = function(argv) {
-    var ret = {};
-    var posArgs = [];
-    for (var i = 2, arg; arg = argv[i] || i < argv.length; ++i) {
-        if (/^--/.exec(arg)) {
-            if (arg.indexOf("=") != -1) {
-                var arr = arg.split("=");
-                ret[arr[0]] = arr[1];
-            } else {
-                ret[arg] = true;
-            }
-        } else {
-            posArgs.push(arg);
-        }
-    }
-    ret._ = posArgs;
-    return ret;
-};
+import org.xwalk.core.XWalkApplication;
+
+public class CordovaApplication extends XWalkApplication {
+}
